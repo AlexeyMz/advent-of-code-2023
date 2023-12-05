@@ -1,0 +1,26 @@
+{
+  "name": "advent-of-code-2023",
+  "version": "0.1.0",
+  "description": "Solutions for Advent of Code 2023 in TypeScript",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "ts-node",
+    "build": "tsc",
+    "test": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlexeyMz/advent-of-code-2023.git"
+  },
+  "keywords": [
+    "advent-of-code",
+    "2023"
+  ],
+  "author": "AlexeyMz",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.3",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.2"
+  }
+}
