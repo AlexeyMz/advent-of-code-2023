@@ -74,5 +74,7 @@ function tokenToDigit(token: string, digits: readonly string[]): number {
   }
 }
 
-solvePuzzle01();
-solvePuzzle01Advanced();
+(async function main() {
+  await solvePuzzle01();
+  await solvePuzzle01Advanced();
+})();
