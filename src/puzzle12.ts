@@ -24,13 +24,18 @@ export async function solvePuzzleAdvanced() {
 
   const matcher = new Matcher();
 
-  let totalVariants = 0;
+  let totalMemoized = 0;
+  let totalReduced = 0;
   for (const row of field) {
-    const variants = memoizedCountVariants(row, matcher);
-    totalVariants += variants;
+    totalMemoized += memoizedCountVariants(row, matcher);
+    totalReduced += reducedCountVariants(row, matcher);
   }
 
-  console.log(`Puzzle 12 (advanced): ${totalVariants}`);
+  console.log(
+    `Puzzle 12 (advanced):\n` +
+    `  memoized = ${totalMemoized}\n` +
+    `   reduced = ${totalReduced}`
+  );
 }
 
 interface SpringRow {
@@ -145,6 +150,107 @@ function previousEndOffset(
     return 0;
   }
   return offsets[index - 1] + groups[index - 1];
+}
+
+/**
+ * Initial solution for Part 2 which does not use any memoization.
+ */
+function reducedCountVariants(row: SpringRow, matcher: Matcher): number {
+  const {springs, groups} = row;
+  const reverseRow: SpringRow = {
+    index: -row.index,
+    springs: [...springs].reverse().join(''),
+    groups: [...groups].reverse(),
+    totalDamaged: row.totalDamaged,
+  };
+
+  const minStarts = computeMinOffsets(row, matcher)
+    .map(offset => offset - 1);
+  const maxEnds = computeMinOffsets(reverseRow, matcher)
+    .map(offset => row.springs.length - offset + 1)
+    .reverse();
+
+  interface EndTuple {
+    readonly end: number;
+    readonly combinations: number;
+  }
+
+  let lastEnds: EndTuple[] = [];
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const start = minStarts[i];
+    const end = maxEnds[i];
+    const segment = springs.substring(start, end);
+    const matches: number[] = [];
+    let nextMatch = 0;
+    while (true) {
+      const matchStart = matcher.matchGroup(segment, nextMatch, group);
+      if (matchStart < 0) {
+        break;
+      }
+      matches.push(start + matchStart);
+      nextMatch = matchStart + 1;
+    }
+    const nextEnds: EndTuple[] = [];
+    for (let j = 0; j < matches.length; j++) {
+      const matchOffset = matches[j];
+      let lastEndCombinations = i === 0 ? 1 : 0;
+      for (const {end, combinations} of lastEnds) {
+        if (end < matchOffset && matcher.matchSpace(springs, end, matchOffset)) {
+          lastEndCombinations += combinations;
+        }
+      }
+      if (lastEndCombinations > 0) {
+        nextEnds.push({
+          end: matchOffset + group,
+          combinations: lastEndCombinations,
+        });
+      }
+    }
+    lastEnds = nextEnds;
+  }
+
+  let combinations = 0;
+  for (const lastEnd of lastEnds) {
+    combinations += lastEnd.combinations;
+  }
+  return combinations;
+}
+
+function computeMinOffsets(row: SpringRow, matcher: Matcher): number[] {
+  const {groups, springs} = row;
+
+  const offsets: number[] = [0];
+  while (offsets.length > 0) {
+    const offset = offsets.pop()!;
+
+    const groupIndex = offsets.length;
+    const groupSize = groups[groupIndex];
+
+    const previousEnd = previousEndOffset(groups, offsets, groupIndex);
+    const matchStart = matcher.matchGroup(springs, offset, groupSize);
+    if (matchStart >= 0 && matcher.matchSpace(springs, previousEnd, matchStart)) {
+      const matchEnd = matchStart + groupSize;
+
+      if (groupIndex === groups.length - 1) {
+        if (matcher.matchFinal(springs, matchEnd)) {
+          offsets.push(matchStart + 1);
+          return offsets;
+        }
+        offsets.push(matchStart + 1);
+      } else {
+        const nextGroupOffset = matchEnd + 1;
+        if (nextGroupOffset < springs.length) {
+          offsets.push(
+            matchStart + 1,
+            nextGroupOffset
+          );
+        }
+      }
+    }
+  }
+
+  throw new Error(`Failed to find any matches for row ${row.index}`);
 }
 
 function memoizedCountVariants(row: SpringRow, matcher: Matcher): number {
