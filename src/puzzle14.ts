@@ -6,7 +6,7 @@ export async function solvePuzzleBase() {
   const lines = content.split('\n').filter(line => line);
 
   const platform = Platform.parse(lines);
-  tilt(platform, -1, 0);
+  tilt(platform, 'n');
 
   await mkdir('./output', {recursive: true});
   await writeFile('./output/puzzle14_tilted.txt', platform.enumerateLines());
@@ -21,36 +21,8 @@ export async function solvePuzzleAdvanced() {
 
   const platform = Platform.parse(lines);
 
-  const rocks: RoundRock[] = [];
-  for (let i = 0; i < platform.rows; i++) {
-    for (let j = 0; j < platform.columns; j++) {
-      if (platform.get(i, j) === Item.RoundRock) {
-        platform.set(i, j, Item.None);
-        rocks.push({row: i, column: j});
-      }
-    }
-  }
-
-  let rotated = platform;
-  const northSpans = scanNorthDelimitedSpans(rotated);
-  rotated = rotated.rotateClockwise();
-  const westSpans = scanNorthDelimitedSpans(rotated);
-  rotated = rotated.rotateClockwise();
-  const southSpans = scanNorthDelimitedSpans(rotated);
-  rotated = rotated.rotateClockwise();
-  const eastSpans = scanNorthDelimitedSpans(rotated);
-
-  const clonedRocks = rocks.map((rock): RoundRock => ({...rock}));
-  tiltNorth(clonedRocks, northSpans);
-
-  const clonedPlatform = platform.clone();
-  placeRocks(clonedRocks, clonedPlatform);
-
-  await mkdir('./output', {recursive: true});
-  await writeFile('./output/puzzle14_tilted_adv.txt', clonedPlatform.enumerateLines());
-
   const memoizedRocks = new Map<string, number>();
-  memoizedRocks.set(stringifyRocks(rocks), 0);
+  memoizedRocks.set(stringifyRocks(platform), 0);
   let foundRepetition = false;
 
   const cycles = 1_000_000_000;
@@ -69,17 +41,18 @@ export async function solvePuzzleAdvanced() {
       );
     }
 
-    tiltNorth(rocks, northSpans);
-    rotateRocksClockwise(rocks, platform.rows);
-    tiltNorth(rocks, westSpans);
-    rotateRocksClockwise(rocks, platform.columns);
-    tiltNorth(rocks, southSpans);
-    rotateRocksClockwise(rocks, platform.rows);
-    tiltNorth(rocks, eastSpans);
-    rotateRocksClockwise(rocks, platform.columns);
+    if (i === 1) {
+      await mkdir('./output', {recursive: true});
+      await writeFile('./output/puzzle14_tilted_adv.txt', platform.enumerateLines());
+    }
+
+    tilt(platform, 'n');
+    tilt(platform, 'w');
+    tilt(platform, 's');
+    tilt(platform, 'e');
 
     if (!foundRepetition) {
-      const rockKey = stringifyRocks(rocks);
+      const rockKey = stringifyRocks(platform);
       if (memoizedRocks.has(rockKey)) {
         const repeatStart = memoizedRocks.get(rockKey)!;
         const repeatSize = i + 1 - repeatStart;
@@ -95,113 +68,116 @@ export async function solvePuzzleAdvanced() {
     i++;
   }
 
-  placeRocks(rocks, platform);
   const totalLoad = calculateNorthLoad(platform);
   console.log(`Puzzle 14 (advanced): ${totalLoad}`);
 }
 
-function tilt(platform: Platform, shiftRow: number, shiftColumn: number): void {
-  for (let i = 0; i < platform.rows; i++) {
-    for (let j = 0; j < platform.columns; j++) {
-      if (platform.get(i, j) === Item.RoundRock) {
-        rollRock(platform, i, i, shiftRow, shiftColumn);
+function tilt(platform: Platform, direction: 'n' | 'w' | 's' | 'e'): void {
+  if (direction === 'n' || direction === 's') {
+    for (let i = 0; i < platform.columns; i++) {
+      let start = 0;
+      let end = platform.rows - 1;
+      if (direction === 's') {
+        [start, end] = [end, start];
+      }
+      rollRocksAlongColumn(platform, i, start, end);
+    }
+  } else {
+    for (let i = 0; i < platform.rows; i++) {
+      let start = 0;
+      let end = platform.columns - 1;
+      if (direction === 'e') {
+        [start, end] = [end, start];
+      }
+      rollRocksAlongRow(platform, i, start, end);
+    }
+  }
+}
+
+function rollRocksAlongColumn(
+  platform: Platform,
+  column: number,
+  startRow: number,
+  endRow: number
+): void {
+  let freeStart = 0;
+  let freeSize = 0;
+
+  const shift = startRow < endRow ? 1 : -1;
+  for (let i = startRow; i !== (endRow + shift); i += shift) {
+    switch (platform.get(i, column)) {
+      case Item.None: {
+        if (freeSize === 0) {
+          freeStart = i;
+          freeSize = 1;
+        } else {
+          freeSize++;
+        }
+        break;
+      }
+      case Item.RoundRock: {
+        if (freeSize > 0) {
+          platform.set(i, column, Item.None);
+          platform.set(freeStart, column, Item.RoundRock);
+          freeStart += shift;
+        }
+        break;
+      }
+      case Item.SquareRock: {
+        freeSize = 0;
+        break;
       }
     }
   }
 }
 
-function rollRock(
+function rollRocksAlongRow(
   platform: Platform,
-  startRow: number,
+  row: number,
   startColumn: number,
-  shiftRow: number,
-  shiftColumn: number
+  endColumn: number
 ): void {
-  platform.set(startRow, startColumn, Item.None);
+  let freeStart = 0;
+  let freeSize = 0;
 
-  let row = startRow;
-  let column = startColumn;
-  while (row > 0 && platform.get(row + shiftRow, column + shiftColumn) === Item.None) {
-    row += shiftRow;
-    column += shiftColumn;
-  }
-
-  if (platform.get(row, column) !== Item.None) {
-    throw new Error(
-      `Invalid roll (${shiftRow},${shiftColumn}) `+
-      `from ${startRow},${startColumn} -> ${row},${column}`
-    );
-  }
-
-  platform.set(row, column, Item.RoundRock);
-};
-
-interface RoundRock {
-  row: number;
-  column: number;
-}
-
-function tiltNorth(
-  rocks: readonly RoundRock[],
-  spans: DelimitedSpans
-): void {
-  const {allOffsets, occupations} = spans;
-  for (const occupation of occupations) {
-    occupation.fill(0);
-  }
-  for (const rock of rocks) {
-    const offsets = allOffsets[rock.column];
-    const occupation = occupations[rock.column];
-    const span = binarySearchFirst(offsets, rock.row);
-    rock.row = offsets[span] + occupation[span];
-    occupation[span]++;
-  }
-}
-
-function rotateRocksClockwise(
-  rocks: readonly RoundRock[],
-  rows: number
-): void {
-  for (const rock of rocks) {
-    const {row, column} = rock;
-    rock.row = column;
-    rock.column = rows - row - 1;
-  }
-}
-
-function stringifyRocks(rocks: RoundRock[]): string {
-  rocks.sort(compareRocks);
-  return rocks
-    .map((rock, i) => i === 0
-      ? `${rock.row},${rock.column}`
-      : `${rock.row - rocks[i - 1].row},${rock.column - rocks[i - 1].column}`
-    )
-    .join(' ');
-}
-
-function compareRocks(a: RoundRock, b: RoundRock): number {
-  let result = (
-    a.row < b.row ? -1 :
-    a.row > b.row ? 1 :
-    0
-  );
-  if (result !== 0) {
-    return result;
-  }
-  return (
-    a.column < b.column ? -1 :
-    a.column > b.column ? 1:
-    0
-  );
-}
-
-function placeRocks(rocks: ReadonlyArray<RoundRock>, platform: Platform): void {
-  for (const rock of rocks) {
-    if (platform.get(rock.row, rock.column) !== Item.None) {
-      throw new Error('Cannot place rock on non-empty space');
+  const shift = startColumn < endColumn ? 1 : -1;
+  for (let i = startColumn; i !== (endColumn + shift); i += shift) {
+    switch (platform.get(row, i)) {
+      case Item.None: {
+        if (freeSize === 0) {
+          freeStart = i;
+          freeSize = 1;
+        } else {
+          freeSize++;
+        }
+        break;
+      }
+      case Item.RoundRock: {
+        if (freeSize > 0) {
+          platform.set(row, i, Item.None);
+          platform.set(row, freeStart, Item.RoundRock);
+          freeStart += shift;
+        }
+        break;
+      }
+      case Item.SquareRock: {
+        freeSize = 0;
+        break;
+      }
     }
-    platform.set(rock.row, rock.column, Item.RoundRock);
   }
+}
+
+function stringifyRocks(platform: Platform): string {
+  const rockStrings: string[] = [];
+  for (let i = 0; i < platform.rows; i++) {
+    for (let j = 0; j < platform.columns; j++) {
+      if (platform.get(i, j) === Item.RoundRock) {
+        rockStrings.push(`${i},${j}`);
+      }
+    }
+  }
+  return rockStrings.join(' ');
 }
 
 function calculateNorthLoad(platform: Platform): number {
@@ -303,70 +279,7 @@ class Platform {
   }
 }
 
-interface DelimitedSpans {
-  readonly allOffsets: ReadonlyArray<readonly number[]>;
-  readonly allSizes: ReadonlyArray<readonly number[]>;
-  readonly occupations: number[][];
-}
-
-const enum SpanScanState {
-  NeedOffset = 1,
-  NeedCapacity = 2,
-}
-
-function scanNorthDelimitedSpans(platform: Platform): DelimitedSpans {
-  const allOffsets: Array<readonly number[]> = [];
-  const allSizes: Array<readonly number[]> = [];
-  const occupations: number[][] = [];
-
-  for (let j = 0; j < platform.columns; j++) {
-    const offsets: number[] = [];
-    const sizes: number[] = [];
-    let state = SpanScanState.NeedOffset;
-    for (let i = 0; i < platform.rows; i++) {
-      if (platform.get(i, j) === Item.SquareRock) {
-        if (state === SpanScanState.NeedCapacity) {
-          sizes.push(i - offsets[offsets.length - 1]);
-          state = SpanScanState.NeedOffset;
-        }
-      } else if (state === SpanScanState.NeedOffset) {
-        offsets.push(i);
-        state = SpanScanState.NeedCapacity;
-      }
-    }
-    if (state === SpanScanState.NeedCapacity) {
-      sizes.push(platform.rows - offsets[offsets.length - 1]);
-    }
-    allOffsets.push(offsets);
-    allSizes.push(sizes);
-    occupations.push(offsets.map(() => 0));
-  }
-
-  return {allOffsets, allSizes, occupations};
-}
-
-/**
- * Finds the lowest offset index `i` such that `offsets[i] <= point`.
- */
-function binarySearchFirst(offsets: readonly number[], point: number): number {
-  if (offsets.length === 0 || point < offsets[0]) {
-    return -1;
-  }
-  let low = 0;
-  let high = offsets.length;
-  while ((high - low) > 1) {
-    const middle = Math.floor((low + high) / 2);
-    const group = offsets[middle];
-    if (point < group) {
-      high = middle;
-    } else {
-      low = middle;
-    }
-  }
-  return low;
-}
-
 (async function main() {
-  // await solvePuzzleBase();
+  await solvePuzzleBase();
   await solvePuzzleAdvanced();
 })();
