@@ -30,7 +30,7 @@ export async function solvePuzzleAdvanced() {
   let startTime = performance.now();
   let i = 0;
   while (i < cycles) {
-    if (i % 10000 === 0) {
+    if (!(i & 0x3FFF)) {
       const percent = (i / cycles) * 100;
       const sinceStart = (performance.now() - startTime) / 1000;
       const estimatedHours = (cycles - i) / (i / sinceStart) / 3600;
@@ -73,97 +73,21 @@ export async function solvePuzzleAdvanced() {
 }
 
 function tilt(platform: Platform, direction: 'n' | 'w' | 's' | 'e'): void {
-  if (direction === 'n' || direction === 's') {
+  if (direction === 'n') {
     for (let i = 0; i < platform.columns; i++) {
-      let start = 0;
-      let end = platform.rows - 1;
-      if (direction === 's') {
-        [start, end] = [end, start];
-      }
-      rollRocksAlongColumn(platform, i, start, end);
+      platform.rollAlongColumn(i, 0, platform.rows - 1);
     }
-  } else {
+  } else if (direction === 's') {
+    for (let i = 0; i < platform.columns; i++) {
+      platform.rollAlongColumn(i, platform.rows - 1, 0);
+    }
+  } else if (direction === 'w') {
     for (let i = 0; i < platform.rows; i++) {
-      let start = 0;
-      let end = platform.columns - 1;
-      if (direction === 'e') {
-        [start, end] = [end, start];
-      }
-      rollRocksAlongRow(platform, i, start, end);
+      platform.rollAlongRow(i, 0, platform.columns - 1);
     }
-  }
-}
-
-function rollRocksAlongColumn(
-  platform: Platform,
-  column: number,
-  startRow: number,
-  endRow: number
-): void {
-  let freeStart = 0;
-  let freeSize = 0;
-
-  const shift = startRow < endRow ? 1 : -1;
-  for (let i = startRow; i !== (endRow + shift); i += shift) {
-    switch (platform.get(i, column)) {
-      case Item.None: {
-        if (freeSize === 0) {
-          freeStart = i;
-          freeSize = 1;
-        } else {
-          freeSize++;
-        }
-        break;
-      }
-      case Item.RoundRock: {
-        if (freeSize > 0) {
-          platform.set(i, column, Item.None);
-          platform.set(freeStart, column, Item.RoundRock);
-          freeStart += shift;
-        }
-        break;
-      }
-      case Item.SquareRock: {
-        freeSize = 0;
-        break;
-      }
-    }
-  }
-}
-
-function rollRocksAlongRow(
-  platform: Platform,
-  row: number,
-  startColumn: number,
-  endColumn: number
-): void {
-  let freeStart = 0;
-  let freeSize = 0;
-
-  const shift = startColumn < endColumn ? 1 : -1;
-  for (let i = startColumn; i !== (endColumn + shift); i += shift) {
-    switch (platform.get(row, i)) {
-      case Item.None: {
-        if (freeSize === 0) {
-          freeStart = i;
-          freeSize = 1;
-        } else {
-          freeSize++;
-        }
-        break;
-      }
-      case Item.RoundRock: {
-        if (freeSize > 0) {
-          platform.set(row, i, Item.None);
-          platform.set(row, freeStart, Item.RoundRock);
-          freeStart += shift;
-        }
-        break;
-      }
-      case Item.SquareRock: {
-        freeSize = 0;
-        break;
-      }
+  } else if (direction === 'e') {
+    for (let i = 0; i < platform.rows; i++) {
+      platform.rollAlongRow(i, platform.columns - 1, 0);
     }
   }
 }
@@ -276,6 +200,79 @@ class Platform {
       }
     }
     return rotated;
+  }
+
+  rollAlongColumn(
+    column: number,
+    startRow: number,
+    endRow: number
+  ): void {
+    const {data, columns} = this;
+    let freeStart = -1;
+
+    const shift = startRow < endRow ? 1 : -1;
+    const stride = columns * shift;
+    const startOffset = startRow * columns + column;
+    const endOffset = endRow * columns + column + stride;
+
+    for (let i = startOffset; i !== endOffset; i += stride) {
+      switch (data[i]) {
+        case Item.None: {
+          if (freeStart < 0) {
+            freeStart = i;
+          }
+          break;
+        }
+        case Item.RoundRock: {
+          if (freeStart >= 0) {
+            data[i] = Item.None;
+            data[freeStart] = Item.RoundRock;
+            freeStart += stride;
+          }
+          break;
+        }
+        case Item.SquareRock: {
+          freeStart = -1;
+          break;
+        }
+      }
+    }
+  }
+
+  rollAlongRow(
+    row: number,
+    startColumn: number,
+    endColumn: number
+  ): void {
+    const {data, columns} = this;
+    let freeStart = -1;
+
+    const shift = startColumn < endColumn ? 1 : -1;
+    const startOffset = row * columns + startColumn;
+    const endOffset = row * columns + endColumn + shift;
+
+    for (let i = startOffset; i !== endOffset; i += shift) {
+      switch (data[i]) {
+        case Item.None: {
+          if (freeStart < 0) {
+            freeStart = i;
+          }
+          break;
+        }
+        case Item.RoundRock: {
+          if (freeStart >= 0) {
+            data[i] = Item.None;
+            data[freeStart] = Item.RoundRock;
+            freeStart += shift;
+          }
+          break;
+        }
+        case Item.SquareRock: {
+          freeStart = -1;
+          break;
+        }
+      }
+    }
   }
 }
 
