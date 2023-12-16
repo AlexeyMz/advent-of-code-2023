@@ -3,30 +3,42 @@ import path from 'node:path';
 
 export async function solvePuzzleBase() {
   const content = await readFile(path.join('./input/puzzle16.txt'), {encoding: 'utf8'});
-//   const content =
-// `
-// .|...\\....
-// |.-.\\.....
-// .....|-...
-// ........|.
-// ..........
-// .........\\
-// ..../.\\\\..
-// .-.-/..|..
-// .|....-|.\\
-// ..//.|....`;
   const lines = content.split('\n').filter(line => line);
 
-  const origin = makeLightPathGraph(lines);
-  const activeCount = countActiveCells(origin, lines.length, lines[0].length);
+  const {west} = computeCompleteLightPathGraph(lines);
+  const activeCount = countActiveCells(west[0], lines.length, lines[0].length);
 
   console.log(`Puzzle 16: ${activeCount}`);
 }
 
 export async function solvePuzzleAdvanced() {
-  // const content = await readFile(path.join('./input/puzzle16.txt'), {encoding: 'utf8'});
-  // const lines = content.split('\n').filter(line => line);
-  // console.log(`Puzzle 16 (advanced): ${totalPower}`);
+  const content = await readFile(path.join('./input/puzzle16.txt'), {encoding: 'utf8'});
+  const lines = content.split('\n').filter(line => line);
+
+  const rows = lines.length;
+  const columns = lines[0].length;
+
+  let maxActive = 0;
+  let maxActiveOrigin: readonly [type: keyof LightPathGraph, number] | undefined;
+  function iterateEachOrigin(graph: LightPathGraph, type: keyof LightPathGraph): void {
+    const nodes = graph[type];
+    for (let i = 0; i < nodes.length; i++) {
+      const origin = nodes[i];
+      const activeCount = countActiveCells(origin, rows, columns);
+      if (activeCount > maxActive) {
+        maxActiveOrigin = [type, i];
+      }
+      maxActive = Math.max(maxActive, activeCount);
+    }
+  }
+
+  const graph = computeCompleteLightPathGraph(lines);
+  iterateEachOrigin(graph, 'north');
+  iterateEachOrigin(graph, 'south');
+  iterateEachOrigin(graph, 'west');
+  iterateEachOrigin(graph, 'east');
+
+  console.log(`Puzzle 16 (advanced): ${maxActive} at ${maxActiveOrigin!.join(' ')}`);
 }
 
 interface Node {
@@ -34,10 +46,16 @@ interface Node {
   row: number;
   column: number;
   next: Node[];
-  // escape?: 'n' | 'w' | 's' | 'e';
 }
 
-function makeLightPathGraph(lines: readonly string[]): Node {
+interface LightPathGraph {
+  north: ReadonlyArray<Node>;
+  south: ReadonlyArray<Node>;
+  west: ReadonlyArray<Node>;
+  east: ReadonlyArray<Node>;
+}
+
+function computeCompleteLightPathGraph(lines: readonly string[]): LightPathGraph {
   const maxRow = lines.length - 1;
   const maxColumn = lines[0].length - 1;
   const nodes = new Map<string, Node>();
@@ -68,7 +86,6 @@ function makeLightPathGraph(lines: readonly string[]): Node {
     shiftRow: number,
     shiftColumn: number
   ) {
-    // console.log(`--> (${shiftRow},${shiftColumn})`);
     let {row, column} = from;
     while (true) {
       row += shiftRow;
@@ -80,10 +97,8 @@ function makeLightPathGraph(lines: readonly string[]): Node {
         const edgeRow = Math.max(0, Math.min(row, maxRow));
         const edgeColumn = Math.max(0, Math.min(column, maxColumn));
         if (!(edgeRow === from.row && edgeColumn === from.column)) {
-          // console.log(`edge at ${edgeRow},${edgeColumn}`);
           from.next.push({sigil: '', row: edgeRow, column: edgeColumn, next: []});
         }
-        // console.log('<--');
         return;
       }
 
@@ -92,10 +107,8 @@ function makeLightPathGraph(lines: readonly string[]): Node {
       if (key) {
         const node = nodes.get(key);
         if (node) {
-          // console.log(`existing "${sigil}" at ${row},${column}`);
           from.next.push(node);
         } else {
-          // console.log(`next "${sigil}" at ${row},${column}`);
           const next: Node = {sigil, row, column, next: []};
           nodes.set(key, next);
           from.next.push(next);
@@ -112,20 +125,44 @@ function makeLightPathGraph(lines: readonly string[]): Node {
             traversePath(next, 0, 1);
           }
         }
-        // console.log('<--');
         return;
       }
     }
   }
 
-  const origin: Node = {sigil: 'S', row: 0, column: -1, next: []};
-  traversePath(origin, 0, 1);
-  if (lines[0][0] === '.' || '-') {
-    origin.column = 0;
-    return origin;
-  } else {
+  function traverseFromEdge(origin: Node, shiftRow: number, shiftColumn: number): Node {
+    traversePath(origin, shiftRow, shiftColumn);
+    if (shiftRow === 0) {
+      const originSigil = lines[origin.row][origin.column + shiftColumn];
+      if (originSigil === '.' || originSigil === '-') {
+        origin.column = origin.column + shiftColumn;
+        return origin;
+      }
+    } else if (shiftColumn === 0) {
+      const originSigil = lines[origin.row + shiftRow][origin.column];
+      if (originSigil === '.' || originSigil === '|') {
+        origin.row = origin.row + shiftRow;
+        return origin;
+      }
+    }
     return origin.next[0];
   }
+
+  const north: Node[] = [];
+  const south: Node[] = [];
+  for (let i = 0; i < maxColumn; i++) {
+    north.push(traverseFromEdge({sigil: 'N', row: -1, column: i, next: []}, 1, 0));
+    south.push(traverseFromEdge({sigil: 'S', row: maxRow + 1, column: i, next: []}, -1, 0));
+  }
+
+  const west: Node[] = [];
+  const east: Node[] = [];
+  for (let i = 0; i < maxColumn; i++) {
+    west.push(traverseFromEdge({sigil: 'W', row: i, column: -1, next: []}, 0, 1));
+    east.push(traverseFromEdge({sigil: 'E', row: i, column: maxColumn + 1, next: []}, 0, -1));
+  }
+
+  return {north, south, west, east};
 }
 
 function countActiveCells(origin: Node, rows: number, columns: number): number {
