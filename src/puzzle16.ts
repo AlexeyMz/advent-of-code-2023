@@ -32,11 +32,17 @@ export async function solvePuzzleAdvanced() {
     }
   }
 
+  const startTime = performance.now();
   const graph = computeCompleteLightPathGraph(lines);
+  const graphTime = performance.now();
+  console.log(`Graph computed in ${(graphTime - startTime).toFixed(2)}ms`);
+
   iterateEachOrigin(graph, 'north');
   iterateEachOrigin(graph, 'south');
   iterateEachOrigin(graph, 'west');
   iterateEachOrigin(graph, 'east');
+  const endTime = performance.now();
+  console.log(`Active cells computed in ${(endTime - graphTime).toFixed(2)}ms`);
 
   console.log(`Puzzle 16 (advanced): ${maxActive} at ${maxActiveOrigin!.join(' ')}`);
 }
