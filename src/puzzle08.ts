@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { lcm } from './core/math';
+
 export async function solvePuzzleBase() {
   const content = await readFile(path.join('./input/puzzle08.txt'), {encoding: 'utf8'});
   const lines = content.split('\n');
@@ -80,24 +82,6 @@ function computeParallelWalkStepCount(graph: Graph): number {
     totalSteps = lcm(totalSteps, stepCount);
   }
   return totalSteps;
-}
-
-function lcm(a: number, b: number): number {
-  return (a / gcd(a, b)) * b;
-}
-
-function gcd(a: number, b: number): number {
-  let x = a;
-  let y = b;
-  if (x < y) {
-    [x, y] = [y, x];
-  }
-  while (y !== 0) {
-    const reminder = x % y;
-    x = y;
-    y = reminder;
-  }
-  return x;
 }
 
 (async function main() {
