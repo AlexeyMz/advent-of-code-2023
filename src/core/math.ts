@@ -1,3 +1,7 @@
+export function modulo(a: number, b: number): number {
+  return (a % b + b) % b;
+}
+
 export function lcm(a: number, b: number): number {
   return (a / gcd(a, b)) * b;
 }
@@ -49,28 +53,28 @@ export function chineseRemainderTheorem(
       const [modulusA] = input[i];
       const [modulusB] = input[j];
       if (gcd(modulusA, modulusB) !== 1) {
-        throw new Error(`Non-coprime moduli for CTR: ${modulusA}, ${modulusB}`);
+        throw new Error(`Non-coprime mod for CTR: ${modulusA}, ${modulusB}`);
       }
     }
   }
 
   let solution = 0n;
 
-  const grandModulus = input.reduce((acc, [modulus]) => acc * BigInt(modulus), 1n);
+  const grandMod = input.reduce((acc, [modulus]) => acc * BigInt(modulus), 1n);
   for (let i = 0; i < input.length; i++) {
     const [m, r] = input[i];
     if (!(m > 0 && r >= 0)) {
       throw new Error(`CTR modulus must be > 0 and remainder >= 0`);
     }
-    const comod = Number(grandModulus / BigInt(m));
-    let [inverse] = extendedEuclidean(comod, m);
+    const coMod = Number(grandMod / BigInt(m));
+    let [inverse] = extendedEuclidean(coMod, m);
     if (inverse < 0) {
       inverse += m;
     }
-    solution += BigInt(comod) * BigInt(inverse) * BigInt(r);
+    solution += BigInt(coMod) * BigInt(inverse) * BigInt(r);
   }
 
-  return Number(solution % grandModulus);
+  return Number(solution % grandMod);
 }
 
 export function gaussArea(points: ReadonlyArray<readonly [number, number]>): number {

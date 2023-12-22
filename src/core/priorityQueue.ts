@@ -44,6 +44,7 @@ export class PriorityQueue<T> {
 
     const top = heap[0];
     const sifted = heap.pop()!;
+    indices.delete(top[0]);
     if (heap.length === 0) {
       return top;
     }

@@ -62,3 +62,37 @@ export function cloneAStarState<NodeKey, Node>(state: AStarState<NodeKey, Node>)
     foundGoal: state.foundGoal,
   };
 }
+
+export function findAllPathsDijkstra<
+  NodeKey extends string,
+  Node extends { readonly cost: number }
+>(params: {
+  initial: Node;
+  nodeKey: (node: Node) => NodeKey;
+  neighbors: (node: Node) => Iterable<Node>;
+}): Map<NodeKey, Node> {
+  const {initial, nodeKey, neighbors} = params;
+
+  const queue = new PriorityQueue<NodeKey>;
+  const shortest = new Map<NodeKey, Node>();
+
+  const initialKey = nodeKey(initial);
+  shortest.set(initialKey, initial);
+  queue.enqueue(initialKey, 0);
+
+  while (queue.size > 0) {
+    const [currentKey] = queue.dequeue()!;
+    const node = shortest.get(currentKey)!;
+
+    for (const neighbor of neighbors(node)) {
+      const neighborKey = nodeKey(neighbor);
+      const existing = shortest.get(neighborKey);
+      if (!existing || neighbor.cost < existing.cost) {
+        queue.enqueue(neighborKey, neighbor.cost);
+        shortest.set(neighborKey, neighbor);
+      }
+    }
+  }
+
+  return shortest;
+}
