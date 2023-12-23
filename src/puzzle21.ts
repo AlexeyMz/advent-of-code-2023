@@ -16,7 +16,7 @@ export async function solvePuzzleBase() {
   const paths = findAllPathsDijkstra({
     initial: {position: initialPosition, cost: 0},
     nodeKey: nodeFromPath,
-    neighbors: path => getNeighborNodes(lines, path, requiredPathLength),
+    neighbors: path => getNeighborNodesRepeating(lines, path, requiredPathLength),
   });
   const endTime = performance.now();
   console.log(`Found ${paths.size} locations using Dijkstra in ${formatElapsedTime(endTime - startTime)}`);
@@ -45,27 +45,19 @@ export async function solvePuzzleAdvanced() {
   // repeats = 2;
   // const N = lines.length * repeats + Math.floor(lines.length / 2);
 
-  const parity = N % 2 === 0 ? 0 : 1;
+  const tiles = computeTiles(lines, N);
 
-  const reachable = cloneArea(lines, 2);
-  const reachableN = lines.length * 2 + Math.floor(lines.length / 2)
-  for (const [i, j] of computeCompleteAreaDijkstra(lines, reachableN, null)) {
-    reachable[lines.length * 2 + i][lines.length * 2 + j] = '+';
+  await mkdir('./output', {recursive: true});
+  for (const [name, [n, m]] of Object.entries(TILES)) {
+    await writeFile(`./output/puzzle21_${name}.txt`, tiles[n][m].map(r => r + '\n'));
   }
-  const reachableParts: Array<readonly string[]> = [];
-  for (let m = 0; m < 5; m++) {
-    for (let n = 0; n < 5; n++) {
-      reachableParts.push(extractArea(
-        reachable.map(r => r.join('')),
-        [m * lines.length, n * lines.length],
-        [(m + 1) * lines.length, (n + 1) * lines.length]
-      ));
-    }
-  }
-  const actualArea = computeCompleteArea(reachableParts, N, parity);
+
+  const tileAreas = tiles.map(row => row.map(computeReachableArea));
+  const actualArea = computeCompleteArea(tileAreas, N, lines.length);
 
   let dijkstraArea: number | undefined;
   if (repeats !== undefined) {
+    const parity = N % 2 === 0 ? 0 : 1;
     const dijkstraCells = computeCompleteAreaDijkstra(lines, N, parity);
     dijkstraArea = dijkstraCells.length;
 
@@ -77,8 +69,32 @@ export async function solvePuzzleAdvanced() {
     await writeFile('./output/puzzle21_dijkstra.txt', tiled.map(t => t.join('') + '\n'));
   }
 
-  console.log(`       Dijkstra area: ${dijkstraArea ? dijkstraArea : '-'}`);
   console.log(`Puzzle 21 (advanced): ${actualArea}`);
+  console.log(`       Dijkstra area: ${dijkstraArea ? dijkstraArea : '-'}`);
+}
+
+function computeTiles(lines: readonly string[], N: number): Array<Array<readonly string[]>> {
+  const reachable = cloneArea(lines, 2);
+  const reachableN = lines.length * 2 + Math.floor(lines.length / 2);
+  const parity = N % 2 === 0 ? 0 : 1;
+  for (const [i, j] of computeCompleteAreaDijkstra(lines, reachableN, parity)) {
+    reachable[lines.length * 2 + i][lines.length * 2 + j] = 'O';
+  }
+
+  const parts: Array<Array<string[]>> = [];
+  for (let m = 0; m < 5; m++) {
+    const row: Array<string[]> = [];
+    for (let n = 0; n < 5; n++) {
+      row.push(extractArea(
+        reachable.map(r => r.join('')),
+        [m * lines.length, n * lines.length],
+        [(m + 1) * lines.length, (n + 1) * lines.length]
+      ));
+    }
+    parts.push(row);
+  }
+
+  return parts;
 }
 
 function cloneArea(
@@ -110,6 +126,64 @@ function extractArea(
   return extracted;
 }
 
+function computeReachableArea(reachable: readonly string[]): number {
+  let area = 0;
+  for (let i = 0; i < reachable.length; i++) {
+    for (let j = 0; j < reachable.length; j++) {
+      if (reachable[i][j] === 'O') {
+        area++;
+      }
+    }
+  }
+  return area;
+}
+
+const TILES = {
+  bodyCentral: [2, 2],
+  bodyShifted: [2, 3],
+  cornerN: [0, 2],
+  cornerS: [4, 2],
+  cornerW: [2, 0],
+  cornerE: [2, 4],
+  largeNE: [1, 3],
+  largeSE: [3, 3],
+  largeNW: [1, 1],
+  largeSW: [3, 1],
+  smallNE: [1, 4],
+  smallSE: [3, 4],
+  smallNW: [1, 0],
+  smallSW: [3, 0],
+} as const;
+
+function computeCompleteArea(
+  tileAreas: ReadonlyArray<ReadonlyArray<number>>,
+  N: number,
+  L: number
+): number {
+  const tileArea = (name: keyof typeof TILES) => {
+    const [n, m] = TILES[name];
+    return tileAreas[n][m];
+  };
+
+  const K = Math.floor(N / L);
+  const centralParityBlocks = discreteDiamondArea(K - 1, 0);
+  const shiftedParityBlocks = discreteDiamondArea(K - 1, 1);
+
+  const area = (
+    tileArea('bodyCentral') * centralParityBlocks +
+    tileArea('bodyShifted') * shiftedParityBlocks +
+    tileArea('cornerN') + tileArea('cornerS') + tileArea('cornerE') + tileArea('cornerW') +
+    (K - 1) * (
+      tileArea('largeNE') + tileArea('largeSE') + tileArea('largeNW') + tileArea('largeSW')
+    ) +
+    K * (
+      tileArea('smallNE') + tileArea('smallSE') + tileArea('smallNW') + tileArea('smallSW')
+    )
+  );
+
+  return area;
+}
+
 /**
  * Computes discrete area of a diamond shape with specified manhattan radius,
  * including its border.
@@ -124,87 +198,6 @@ function discreteDiamondArea(radius: number, parity: 0 | 1 | null): number {
   } else {
     return (radius + 1) * radius * 2 + 1;
   }
-}
-
-function computeCompleteArea(
-  reachable: ReadonlyArray<readonly string[]>,
-  N: number,
-  parity: 0 | 1 | null
-): number {
-  const L = reachable[0].length;
-  const M = Math.floor(L / 2);
-  const E = L - 1;
-  const K = Math.floor(N / L);
-  const shiftedParity = N % 2 === 0 ? parity : invertParity(parity);
-
-  const sameBlockArea = computeArea(reachable[12], parity, i => [0, E]);
-  const shiftedBlockArea = computeArea(reachable[13], shiftedParity, i => [0, E]);
-
-  const cornerParity = K % 2 === 0 ? parity : shiftedParity;
-  const cornerN = computeArea(reachable[2], cornerParity, i => [M - i, M + i]);
-  const cornerS = computeArea(reachable[22], cornerParity, i => [M - (E - i), M + (E - i)]);
-  const cornerW = computeArea(reachable[10], cornerParity, i => [Math.abs(i - M), E]);
-  const cornerE = computeArea(reachable[14], cornerParity, i => [0, E - Math.abs(i - M)]);
-
-  const largeParity = cornerParity;
-  const largeNE = computeArea(reachable[8], largeParity, i => [0, M + i]);
-  const largeSE = computeArea(reachable[18], largeParity, i => [0, M + (E - i)]);
-  const largeNW = computeArea(reachable[6], largeParity, i => [M - i, E]);
-  const largeSW = computeArea(reachable[16], largeParity, i => [M - (E - i), E]);
-
-  const smallParity = invertParity(cornerParity);
-  const smallNE = computeArea(reachable[3], smallParity, i => [0, M - (E - i) - 1]);
-  const smallSE = computeArea(reachable[23], smallParity, i => [0, M - i - 1]);
-  const smallNW = computeArea(reachable[1], smallParity, i => [M + (E - i) + 1, E]);
-  const smallSW = computeArea(reachable[21], smallParity, i => [M + i + 1, E]);
-
-  const sameParityBlocks = discreteDiamondArea(K - 1, 0);
-  const shiftedParityBlocks = discreteDiamondArea(K - 1, 1);
-
-  const area = (
-    sameBlockArea * sameParityBlocks +
-    shiftedBlockArea * shiftedParityBlocks +
-    cornerN + cornerS + cornerE + cornerW +
-    (K - 1) * (largeNE + largeSE + largeNW + largeSW) +
-    (K) * (smallNE + smallSE + smallNW + smallSW)
-  );
-  return area;
-}
-
-function invertParity(parity: 0 | 1 | null): 0 | 1 | null {
-  if (parity === null) {
-    return null;
-  }
-  return parity ? 0 : 1;
-}
-
-let MARKED_AREA: string[][] | undefined;
-let markedIndex = 0;
-function resetMarkedArea(lines: readonly string[]) {
-  MARKED_AREA = cloneArea(lines, 0);
-}
-
-function computeArea(
-  reachable: readonly string[],
-  parity: 0 | 1 | null,
-  column: (row: number) => readonly [from: number, to: number]
-): number {
-  resetMarkedArea(reachable);
-  let area = 0;
-  for (let i = 0; i < reachable.length; i++) {
-    const [startRaw, endRaw] = column(i);
-    const start = Math.max(0, startRaw);
-    const end = Math.min(reachable.length - 1, endRaw);
-    for (let j = start; j <= end; j++) {
-      if (reachable[i][j] === '+' && (parity === null || (i + j) % 2 === parity)) {
-        MARKED_AREA![i][j] = 'Q';
-        area++;
-      }
-    }
-  }
-  writeFile(`./output/puzzle21_part${markedIndex}.txt`, MARKED_AREA!.map(r => r.join('') + '\n'));
-  markedIndex++;
-  return area;
 }
 
 function computeCompleteAreaDijkstra(
@@ -258,32 +251,6 @@ const NEIGHBOR_POSITIONS: readonly Position[] = [
   [-1, 0], [0, -1], [0, 1], [1, 0]
 ];
 
-function* getNeighborNodes(
-  lines: readonly string[],
-  path: Path,
-  maxCost: number
-): Iterable<Path> {
-  if (path.cost >= maxCost) {
-    return;
-  }
-  const [startRow, startColumn] = path.position;
-  for (const [i, j] of NEIGHBOR_POSITIONS) {
-    const row = startRow + i;
-    const column = startColumn + j;
-    if (
-      row >= 0 && row < lines.length &&
-      column >= 0 && column < lines[0].length &&
-      lines[row][column] !== '#'
-    ) {
-      yield {
-        position: [row, column],
-        cost: path.cost + 1,
-        previous: path,
-      };
-    }
-  }
-}
-
 function* getNeighborNodesRepeating(
   lines: readonly string[],
   path: Path,
@@ -309,6 +276,6 @@ function* getNeighborNodesRepeating(
 }
 
 (async function main() {
-  // await solvePuzzleBase();
+  await solvePuzzleBase();
   await solvePuzzleAdvanced();
 })();
