@@ -39,4 +39,12 @@ export namespace Vector3 {
   export function normalize(v: Vector3): Vector3 {
     return scale(v, 1 / length(v));
   }
+
+  export function equal(a: Vector3, b: Vector3): boolean {
+    return (
+      a.x === b.x &&
+      a.y === b.y &&
+      a.z === b.z
+    );
+  }
 }
