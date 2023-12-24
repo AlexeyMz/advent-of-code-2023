@@ -21,7 +21,7 @@ class MainScene {
   };
   private lights: Lights;
   private floor: Floor;
-  private box: Bricks;
+  private bricks: Bricks;
 
   constructor() {
     this.scene = new THREE.Scene();
@@ -38,7 +38,7 @@ class MainScene {
     window.addEventListener('keydown', this.onKeyDown);
 
     this.camera.position.z = 5;
-    this.camera.position.set( 0, 5, 20);
+    this.camera.position.set(0, 5, 20);
 
     const controls = new OrbitControls(this.camera, this.renderer.domElement);
     controls.enableDamping = true;
@@ -53,7 +53,9 @@ class MainScene {
 
     this.lights = new Lights(this.scene);
     this.floor = new Floor(this.scene);
-    this.box = new Bricks(this.scene);
+    this.bricks = new Bricks(this.scene);
+
+    this.controls.target = this.bricks.centerAtGround;
   }
 
   private onWindowResize = () => {
@@ -86,7 +88,7 @@ class MainScene {
 
   render() {
     this.controls.update();
-    this.box.update();
+    this.bricks.update();
     this.renderer.render(this.scene, this.camera);
   }
 }
@@ -129,7 +131,13 @@ class Floor {
 class Bricks {
   // private cube: THREE.Mesh;
 
+  readonly centerAtGround: THREE.Vector3;
+
   constructor(scene: THREE.Scene) {
+    let minX = 0;
+    let minY = 0;
+    let maxX = 0;
+    let maxY = 0;
     for (const brick of DATA.bricks) {
       const dx = Math.abs(brick.end.x - brick.start.x);
       const dy = Math.abs(brick.end.y - brick.start.y);
@@ -144,7 +152,16 @@ class Bricks {
         brick.start.y + dy * 0.5 + 0.5
       );
       scene.add(mesh);
+      minX = Math.min(minX, brick.start.x, brick.end.x);
+      minY = Math.min(minY, brick.start.y, brick.end.y);
+      maxX = Math.max(maxX, brick.start.x, brick.end.x);
+      maxY = Math.max(maxY, brick.start.y, brick.end.y);
     }
+    this.centerAtGround = new THREE.Vector3(
+      (maxX - minX) / 2,
+      1,
+      (maxY - minY) / 2
+    );
   }
 
   update() {
