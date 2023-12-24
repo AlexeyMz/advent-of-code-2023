@@ -4,6 +4,9 @@ export interface Vector3 {
   readonly z: number;
 }
 export namespace Vector3 {
+  export const ZERO: Vector3 = {x: 0, y: 0, z: 0};
+  export const ONE: Vector3 = {x: 1, y: 1, z: 1};
+
   export function add(a: Vector3, b: Vector3): Vector3 {
     return {
       x: a.x + b.x,

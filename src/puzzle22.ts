@@ -15,7 +15,8 @@ export async function solvePuzzleBase() {
     JSON.stringify({bricks: stackedBricks}, undefined, 2)
   );
 
-  // console.log(`Puzzle 22: ${totalCellCount}`);
+  const nonSupportingBricks = countNonSupportingBricks(stackedBricks);
+  console.log(`Puzzle 22: ${nonSupportingBricks}`);
 }
 
 export async function solvePuzzleAdvanced() {
@@ -55,32 +56,68 @@ function parseBricks(lines: readonly string[]): Brick[] {
   return bricks;
 }
 
-function simulateFall(bricks: readonly Brick[]): Brick[] {
-  type BrickPortion = readonly [brick: Brick, ground: boolean];
+type BrickPart = readonly [brick: Brick, ground: boolean];
 
-  const stack: Array<BrickPortion[] | undefined> = [];
-  const getLayer = (z: number): BrickPortion[] => {
+class BrickStack {
+  private static readonly EMPTY_LAYER: BrickPart[] = [];
+
+  private readonly stack: Array<BrickPart[] | undefined> = [];
+
+  constructor(bricks: readonly Brick[]) {
+    for (const brick of bricks) {
+      // const shift = Vector3.normalize(Vector3.subtract(brick.end, brick.start));
+      const minZ = Math.min(brick.start.z, brick.end.z);
+      const maxZ = Math.max(brick.start.z, brick.end.z);
+      for (let z = minZ; z <= maxZ; z++) {
+        this.pushAt(z, [brick, z === minZ]);
+      }
+    }
+  }
+
+  get size(): number {
+    return this.stack.length;
+  }
+
+  getLayer(z: number): readonly BrickPart[] {
+    const {stack} = this;
+    const layer = stack[z];
+    return layer ?? BrickStack.EMPTY_LAYER;
+  }
+
+  private ensureLayer(z: number): BrickPart[] {
+    const {stack} = this;
     let layer = stack[z];
     if (!layer) {
       layer = [];
       stack[z] = layer;
     }
     return layer;
-  };
-
-  for (const brick of bricks) {
-    // const shift = Vector3.normalize(Vector3.subtract(brick.end, brick.start));
-    const minZ = Math.min(brick.start.z, brick.end.z);
-    const maxZ = Math.max(brick.start.z, brick.end.z);
-    for (let z = minZ; z <= maxZ; z++) {
-      getLayer(z).push([brick, z === minZ]);
-    }
   }
 
+  pushAt(z: number, part: BrickPart): void {
+    this.ensureLayer(z).push(part);
+  }
+
+  popAt(z: number, brick: Brick): BrickPart | undefined {
+    const layer = this.stack[z];
+    if (!layer) {
+      return undefined;
+    }
+    const index = layer.findIndex(p => p[0] === brick);
+    if (index < 0) {
+      return undefined;
+    }
+    const [part] = layer.splice(index, 1);
+    return part;
+  }
+}
+
+function simulateFall(bricks: readonly Brick[]): Brick[] {
+  const stack = new BrickStack(bricks);
   const zShifts = bricks.map(() => 0);
 
-  for (let z = 1; z < stack.length; z++) {
-    const layer = getLayer(z);
+  for (let z = 1; z < stack.size; z++) {
+    const layer = stack.getLayer(z);
     let i = 0;
     while (i < layer.length) {
       const [brick, ground] = layer[i];
@@ -92,7 +129,7 @@ function simulateFall(bricks: readonly Brick[]): Brick[] {
       let zShift = -1;
       nextShift: while (z + zShift >= 1) {
         const brickShift: Vector3 = {x: 0, y: 0, z: zShift};
-        const otherLayer = getLayer(z + zShift);
+        const otherLayer = stack.getLayer(z + zShift);
         for (const [otherBrick] of otherLayer) {
           const otherShift: Vector3 = {x: 0, y: 0, z: zShifts[otherBrick.index]};
           if (brickIntersect(brick, brickShift, otherBrick, otherShift)) {
@@ -107,14 +144,12 @@ function simulateFall(bricks: readonly Brick[]): Brick[] {
         i++;
       } else {
         zShifts[brick.index] = resultShift;
-        for (let zz = z; zz < stack.length; zz++) {
-          const fromLayer = getLayer(zz);
-          const index = fromLayer.findIndex(p => p[0] === brick);
-          if (index < 0) {
+        for (let zz = z; zz < stack.size; zz++) {
+          const part = stack.popAt(zz, brick);
+          if (!part) {
             break;
           }
-          const [part] = fromLayer.splice(index, 1);
-          getLayer(zz + resultShift).push(part);
+          stack.pushAt(zz + resultShift, part);
         }
       }
     }
@@ -167,6 +202,51 @@ function brickIntersect(a: Brick, aShift: Vector3, b: Brick, bShift: Vector3): b
 
 function intervalIntersect(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
   return Math.min(aEnd, bEnd) >= Math.max(aStart, bStart);
+}
+
+function countNonSupportingBricks(bricks: readonly Brick[]): number {
+  const nodes = computeBrickSupportGraph(bricks);
+
+  let nonSupporting = 0;
+  nextNode: for (const node of nodes) {
+    for (const above of node.above) {
+      if (above.below.length === 1) {
+        continue nextNode;
+      }
+    }
+    nonSupporting++;
+  }
+
+  return nonSupporting;
+}
+
+interface BrickNode {
+  readonly brick: Brick;
+  readonly above: BrickNode[];
+  readonly below: BrickNode[];
+}
+
+function computeBrickSupportGraph(bricks: readonly Brick[]): BrickNode[] {
+  const nodes = bricks.map((brick): BrickNode => ({brick, above: [], below: []}));
+  const stack = new BrickStack(bricks);
+
+  for (let z = 1; z < stack.size; z++) {
+    for (const [brick, ground] of stack.getLayer(z)) {
+      if (!ground) {
+        continue;
+      }
+      const node = nodes[brick.index];
+      for (const [belowBrick] of stack.getLayer(z - 1)) {
+        if (brickIntersect(brick, {x: 0, y: 0, z: -1}, belowBrick, Vector3.ZERO)) {
+          const belowNode = nodes[belowBrick.index];
+          node.below.push(belowNode);
+          belowNode.above.push(node);
+        }
+      }
+    }
+  }
+
+  return nodes;
 }
 
 (async function main() {
