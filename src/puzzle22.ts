@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { PriorityQueue } from './core/priorityQueue';
 import { Vector3 } from './core/vector';
 
 export async function solvePuzzleBase() {
@@ -20,9 +21,14 @@ export async function solvePuzzleBase() {
 }
 
 export async function solvePuzzleAdvanced() {
-  // const content = await readFile(path.join('./input/puzzle22.txt'), {encoding: 'utf8'});
-  // const lines = content.split('\n').map(line => line.trim()).filter(line => line);
-  // console.log(`Puzzle 22 (advanced): ${actualArea}`);
+  const content = await readFile(path.join('./input/puzzle22.txt'), {encoding: 'utf8'});
+  const lines = content.split('\n').map(line => line.trim()).filter(line => line);
+
+  const bricks = parseBricks(lines);
+  const stackedBricks = simulateFall(bricks);
+  const fallChainSum = sumFallChainLengths(stackedBricks);
+
+  console.log(`Puzzle 22 (advanced): ${fallChainSum}`);
 }
 
 interface Brick {
@@ -218,6 +224,40 @@ function countNonSupportingBricks(bricks: readonly Brick[]): number {
   }
 
   return nonSupporting;
+}
+
+function sumFallChainLengths(bricks: readonly Brick[]): number {
+  const nodes = computeBrickSupportGraph(bricks);
+  let sum = 0;
+  for (const target of nodes) {
+    sum += computeFallChainLength(target);
+  }
+  return sum;
+}
+
+function computeFallChainLength(target: BrickNode): number {
+  const queue = new PriorityQueue<BrickNode>();
+  queue.enqueue(target, Math.max(target.brick.start.z, target.brick.end.z));
+
+  const visited = new Set<BrickNode>([target]);
+  const unstableSupport = new Set<BrickNode>([target]);
+  while (queue.size > 0) {
+    const [node] = queue.dequeue()!;
+    nextAbove: for (const above of node.above) {
+      if (visited.has(above)) {
+        continue;
+      }
+      visited.add(above);
+      for (const support of above.below) {
+        if (!unstableSupport.has(support)) {
+          continue nextAbove;
+        }
+      }
+      queue.enqueue(above, Math.max(above.brick.start.z, above.brick.end.z));
+      unstableSupport.add(above);
+    }
+  }
+  return unstableSupport.size - 1;
 }
 
 interface BrickNode {

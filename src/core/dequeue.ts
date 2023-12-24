@@ -8,6 +8,7 @@ export class Dequeue<T> implements Iterable<T> {
     if (items) {
       for (const item of items) {
         this.buffer.push(item);
+        this._size++;
       }
     }
   }
