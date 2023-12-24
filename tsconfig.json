@@ -3,10 +3,18 @@
     "target": "ES2020",
     "module": "commonjs",
     "esModuleInterop": true,
+
+    /* Bundler mode */
+    // "moduleResolution": "bundler",
+    // "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
   },
   "include": [
     "src/**/*.ts"
