@@ -1,22 +1,19 @@
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { Vector3 } from './core/vector';
 
 export async function solvePuzzleBase() {
-  const content = await readFile(path.join('./input/puzzle22_test.txt'), {encoding: 'utf8'});
+  const content = await readFile(path.join('./input/puzzle22.txt'), {encoding: 'utf8'});
   const lines = content.split('\n').map(line => line.trim()).filter(line => line);
 
   const bricks = parseBricks(lines);
   const stackedBricks = simulateFall(bricks);
 
-  await writeFile('./generated/puzzle22.json', JSON.stringify(
-    {
-      bricks: stackedBricks,
-    },
-    undefined,
-    2
-  ));
+  await writeFile(
+    './generated/puzzle22.json',
+    JSON.stringify({bricks: stackedBricks}, undefined, 2)
+  );
 
   // console.log(`Puzzle 22: ${totalCellCount}`);
 }
@@ -110,14 +107,14 @@ function simulateFall(bricks: readonly Brick[]): Brick[] {
         i++;
       } else {
         zShifts[brick.index] = resultShift;
-        for (let j = i; j < stack.length; j++) {
-          const fromLayer = getLayer(z);
+        for (let zz = z; zz < stack.length; zz++) {
+          const fromLayer = getLayer(zz);
           const index = fromLayer.findIndex(p => p[0] === brick);
           if (index < 0) {
             break;
           }
           const [part] = fromLayer.splice(index, 1);
-          getLayer(j + resultShift).push(part);
+          getLayer(zz + resultShift).push(part);
         }
       }
     }
