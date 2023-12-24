@@ -15,7 +15,10 @@ class MainScene {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly renderer: THREE.Renderer;
 
-  private controls: { update(): void };
+  private controls: {
+    target: THREE.Vector3;
+    update(): void;
+  };
   private lights: Lights;
   private floor: Floor;
   private box: Bricks;
@@ -32,6 +35,7 @@ class MainScene {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(this.renderer.domElement);
     window.addEventListener('resize', this.onWindowResize);
+    window.addEventListener('keydown', this.onKeyDown);
 
     this.camera.position.z = 5;
     this.camera.position.set( 0, 5, 20);
@@ -56,7 +60,29 @@ class MainScene {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-  }
+  };
+
+  private onKeyDown = (e: KeyboardEvent) => {
+    const dy = 5;
+    switch (e.code) {
+      case 'KeyW': {
+        this.controls.target.y += dy;
+        this.camera.position.y += dy;
+        break;
+      }
+      case 'KeyA': {
+        break;
+      }
+      case 'KeyS': {
+        this.controls.target.y -= dy;
+        this.camera.position.y -= dy;
+        break;
+      }
+      case 'KeyD': {
+        break;
+      }
+    }
+  };
 
   render() {
     this.controls.update();
