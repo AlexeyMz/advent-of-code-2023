@@ -64,7 +64,7 @@ export function cloneAStarState<NodeKey, Node>(state: AStarState<NodeKey, Node>)
 }
 
 export function findAllPathsDijkstra<
-  NodeKey extends string,
+  NodeKey,
   Node extends { readonly cost: number }
 >(params: {
   initial: Node;

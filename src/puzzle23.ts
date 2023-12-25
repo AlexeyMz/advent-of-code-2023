@@ -1,9 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import terminalKit from 'terminal-kit';
 
 import { findPathAStar } from './core/pathFind';
+import { formatElapsedTime } from './core/performance';
 import { AStarController, AStarView } from './terminal/astarView';
 
 export async function solvePuzzleBase() {
@@ -18,7 +19,7 @@ export async function solvePuzzleBase() {
       const distance = manhattanDistance(path.node.position, endNode.position);
       return -(distance * distance);
     },
-    neighbors: path => nodeNeighbors(path),
+    neighbors: path => nodeNeighborsDirected(path),
     reachedGoal: path => path.node === endNode,
   });
 
@@ -33,9 +34,59 @@ export async function solvePuzzleBase() {
 }
 
 export async function solvePuzzleAdvanced() {
-  // const content = await readFile(path.join('./input/puzzle23.txt'), {encoding: 'utf8'});
-  // const lines = content.split('\n').map(line => line.trim()).filter(line => line);
-  // console.log(`Puzzle 23 (advanced): ${fallChainSum}`);
+  const content = await readFile(path.join('./input/puzzle23.txt'), {encoding: 'utf8'});
+  const lines = content.split('\n').map(line => line.trim()).filter(line => line);
+
+  const [startNode, endNode] = buildMazeGraph(lines);
+
+  await mkdir('./output', {recursive: true});
+  await writeFile(
+    './output/puzzle23_graph.ttl',
+    generateMageGraphAsTurtle(startNode, endNode)
+  );
+
+  const visited = new Set<MazeNode>();
+  function visit(node: MazeNode) {
+    if (visited.has(node)) {
+      return;
+    }
+    visited.add(node);
+    for (const trail of node.trailsIn) {
+      node.trailsOut.push(trail);
+    }
+    node.trailsIn.length = 0;
+    node.trailsOut.sort((a, b) => b.length - a.length);
+    for (const trail of node.trailsOut) {
+      visit(trail.other);
+    }
+  }
+  visit(startNode);
+
+  const startTime = performance.now();
+  let visitCount = 0;
+  const maxCost = findLongestPath({
+    initial: {node: startNode, cost: 0},
+    nodeKey: nodeKey,
+    neighbors: nodeNeighborsAll,
+    reachedGoal: path => path.node === endNode,
+    onVisit: (maxPath, completed) => {
+      if (completed) {
+        const endTime = performance.now();
+        const elapsed = endTime - startTime;
+        console.log(
+          `Completed, visited ${visitCount} nodes in ${formatElapsedTime(elapsed)}, `+
+          `max = ${maxPath?.cost}`
+        );
+      } else {
+        visitCount++;
+        if (visitCount % 1000000 === 0) {
+          console.log(`Visited ${visitCount} nodes, max = ${maxPath?.cost}`);
+        }
+      }
+    }
+  });
+
+  console.log(`Puzzle 23 (advanced): ${maxCost}`);
 }
 
 export async function visualizePuzzle() {
@@ -51,7 +102,7 @@ export async function visualizePuzzle() {
       const distance = manhattanDistance(path.node.position, endNode.position);
       return -(distance * distance);
     },
-    neighbors: path => nodeNeighbors(path),
+    neighbors: path => nodeNeighborsDirected(path),
     reachedGoal: path => path.node === endNode,
   });
 
@@ -99,7 +150,6 @@ function buildMazeGraph(lines: readonly string[]): readonly [start: MazeNode, en
     trailsOut: [],
   };
 
-  const visited = new Set<`${number},${number}`>();
   const nodes = new Map<`${number},${number}`, MazeNode>();
   nodes.set(`${endPosition[0]},${endPosition[1]}`, endNode);
 
@@ -128,8 +178,6 @@ function buildMazeGraph(lines: readonly string[]): readonly [start: MazeNode, en
     while (true) {
       const backward = invertDirection(forward);
       position = moveInDirection(position, forward);
-      length++;
-      points.push(position);
       const cellKey = `${position[0]},${position[1]}` as const;
       const cell = getCellAt(lines, position);
       if (cell === '#') {
@@ -142,7 +190,9 @@ function buildMazeGraph(lines: readonly string[]): readonly [start: MazeNode, en
         /* connected to an intersection */
         return;
       } else {
-        // visited.add(cellKey);
+        length++;
+        points.push(position);
+
         const slope = directionFromSign(cell);
         if (slope) {
           if (slope === backward) {
@@ -253,16 +303,32 @@ function nodeKey(path: Path): MazeNode {
   return path.node;
 }
 
-function* nodeNeighbors(path: Path): Iterable<Path> {
+function* nodeNeighborsDirected(path: Path): Iterable<Path> {
   for (const trail of path.node.trailsOut) {
     yield {
       node: trail.other,
-      cost: path.cost - trail.length,
+      cost: path.cost - (trail.length + 1),
       previous: path,
       byTrail: trail,
     };
   }
 }
+
+function* nodeNeighborsAll(path: Path): Iterable<Path> {
+  for (const trail of path.node.trailsOut) {
+    yield {
+      node: trail.other,
+      cost: path.cost + (trail.length + 1),
+      previous: path,
+      byTrail: trail,
+    };
+  }
+}
+
+// function* iterateConcatenated<T>(a: Iterable<T>, b: Iterable<T>): Iterable<T> {
+//   yield* a;
+//   yield* b;
+// }
 
 function manhattanDistance(a: Position, b: Position): number {
   return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
@@ -277,6 +343,76 @@ function collectPathNodes(path: Path): MazeNode[] {
   }
   result.reverse();
   return result;
+}
+
+function findLongestPath<NodeKey, Node extends { readonly cost: number }>(params: {
+  initial: Node;
+  nodeKey: (node: Node) => NodeKey;
+  neighbors: (node: Node) => Iterable<Node>;
+  reachedGoal: (path: Node) => boolean;
+  onVisit?: (maxNode: Node | undefined, completed: boolean) => void;
+}) {
+  const {initial, nodeKey, neighbors, reachedGoal, onVisit} = params;
+
+  let maxNode: Node | undefined;
+
+  const visiting = new Set<NodeKey>();
+  function visit(node: Node): void {
+    onVisit?.(maxNode, false);
+
+    if (reachedGoal(node)) {
+      if (!maxNode || maxNode.cost < node.cost) {
+        maxNode = node;
+      }
+    }
+    for (const neighbor of neighbors(node)) {
+      const neighborKey = nodeKey(neighbor);
+      if (!visiting.has(neighborKey)) {
+        visiting.add(neighborKey);
+        visit(neighbor);
+        visiting.delete(neighborKey);
+      }
+    }
+  }
+
+  visiting.add(nodeKey(initial));
+  visit(initial);
+
+  if (!maxNode) {
+    throw new Error('Failed to find any path to the goal');
+  }
+
+  onVisit?.(maxNode, true);
+  return maxNode.cost;
+}
+
+function* generateMageGraphAsTurtle(start: MazeNode, end: MazeNode): IterableIterator<string> {
+  const prefix = 'urn:aoc2023:day23';
+  const nodeIri = ({position: [i, j]}: MazeNode) => `<${prefix}:module:${i}-${j}>`;
+
+  const visited = new Set<MazeNode>();
+  const stack = [start];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    visited.add(node);
+
+    yield `${nodeIri(node)} a <${prefix}:MazeNode> .\n`;
+    if (node === start) {
+      yield `${nodeIri(node)} a <${prefix}:Start> .\n`;
+    } else if (node === end) {
+      yield `${nodeIri(node)} a <${prefix}:End> .\n`;
+    }
+
+    for (const trail of node.trailsOut) {
+      const link = `${nodeIri(node)} <${prefix}:trailTo> ${nodeIri(trail.other)}`;
+      yield `${link} .\n`;
+      yield `<< ${link} >> <${prefix}:length> ${trail.length} .\n`;
+
+      if (!visited.has(trail.other)) {
+        stack.push(trail.other);
+      }
+    }
+  }
 }
 
 class MazeView extends AStarView<MazeNode, Path> {
@@ -294,8 +430,8 @@ class MazeView extends AStarView<MazeNode, Path> {
   protected override drawAll(): void {
     this.drawArea();
     this.drawQueuedPaths();
-    this.drawFoundPath();
     this.drawQueue();
+    this.drawFoundPath();
     this.drawScrollbars();
     this.drawMessages();
   }
@@ -376,15 +512,20 @@ class MazeView extends AStarView<MazeNode, Path> {
   }
 
   private drawFoundPath() {
-    const {terminal, state} = this;
+    const {terminal, maze, state} = this;
+    const colored = terminal.yellow;
     if (state && state.foundGoal) {
       let path = state.foundGoal;
       while (path.previous) {
+        const [i, j] = path.node.position;
+        this.drawInCell(j, i, 0, 0, colored.str(maze[i][j]));
         if (path.byTrail) {
-          this.drawTrail(path.byTrail, terminal.yellow);
+          this.drawTrail(path.byTrail, colored);
         }
         path = path.previous;
       }
+      const [i, j] = path.node.position;
+      this.drawInCell(j, i, 0, 0, colored.str(maze[i][j]));
     }
   }
 

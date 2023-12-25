@@ -221,7 +221,7 @@ export abstract class AStarView<NodeKey, Node> {
       for (let j = 0; j < areaSizeX; j++) {
         this.putAnsi(paddingX + j, y, coloredLine.str('-'));
       }
-      const barSize = Math.min(1, Math.floor(cellCountX * cellSizeX / areaSizeX));
+      const barSize = Math.max(1, Math.floor(areaSizeX * areaSizeX / cellCountX * cellSizeX));
       const barX = Math.floor((scrollX / maxScrollX) * (areaSizeX - barSize));
       for (let j = 0; j < barSize; j++) {
         this.putAnsi(paddingX + barX + j, y, coloredBar.str('*'));
@@ -233,7 +233,7 @@ export abstract class AStarView<NodeKey, Node> {
       for (let i = 0; i < areaSizeY; i++) {
         this.putAnsi(x, paddingY + i, coloredLine.str('|'));
       }
-      const barSize = Math.min(1, Math.floor(cellCountY * cellSizeY / areaSizeY));
+      const barSize = Math.max(1, Math.floor(areaSizeY * areaSizeY / cellCountY * cellSizeY));
       const barY = Math.floor((scrollY / maxScrollY) * (areaSizeY - barSize));
       for (let i = 0; i < barSize; i++) {
         this.putAnsi(x, paddingY + barY + i, coloredBar.str('*'));
