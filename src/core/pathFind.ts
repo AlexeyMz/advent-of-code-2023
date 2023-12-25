@@ -7,7 +7,7 @@ export interface AStarState<NodeKey, Node> {
 }
 
 export function* findPathAStar<
-  NodeKey extends string,
+  NodeKey,
   Node extends { readonly cost: number }
 >(params: {
   initial: Node;

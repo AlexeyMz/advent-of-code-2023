@@ -3,7 +3,8 @@ import path from 'node:path';
 
 import terminalKit from 'terminal-kit';
 
-import { AStarState, findPathAStar, cloneAStarState } from './core/pathFind';
+import { AStarState, findPathAStar } from './core/pathFind';
+import { AStarController, AStarView } from './terminal/astarView';
 
 export async function solvePuzzleBase() {
   const content = await readFile(path.join('./input/puzzle17.txt'), {encoding: 'utf8'});
@@ -107,75 +108,12 @@ export async function visualizePuzzle() {
       path.position[1] === goal[1]
     )
   });
-  const computedSteps: AStarState<string, Path>[] = [];
-  let stepIndex = -1;
-  let done = false;
 
-  const terminal = terminalKit.terminal;
-  terminal.grabInput(true);
-  const screen = new terminalKit.ScreenBuffer({dst: terminal});
-
-  const visualization = new TerminalVisualization(terminal, screen, city);
-  const helpLine = [
-    `${terminal.green.str('ESC/Ctrl-C/q')}: exit`,
-    `${terminal.green.str('SPACE')}: step x1`,
-    `${terminal.green.str('f')}: step x10`,
-    `${terminal.green.str('← → PgUp PgDown')}: navigate steps`,
-  ].join(', ');
-
-  const updateVisualization = () => {
-    visualization.setState(computedSteps[stepIndex]);
-    visualization.setPreviousState(computedSteps[stepIndex - 1]);
-
-    const message: string[] = [helpLine, '', `Step ${stepIndex + 1} / ${computedSteps.length}`];
-    const lastState = computedSteps[computedSteps.length - 1];
-    if (lastState && lastState.foundGoal) {
-      message.push(`Found path, cost = ${lastState.foundGoal.cost}`);
-    }
-    visualization.setMessage(message);
-    visualization.draw();
-  };
-
-  updateVisualization();
-
-  terminal.on('key', (key: string) => {
-    let shouldUpdate = false;
-
-    if (key === 'CTRL_C' || key === 'ESCAPE' || key === 'q') {
-      terminal.grabInput({mouse: 'motion' , focus: true} as any);
-      terminal.clear();
-      process.exit();
-    } else if (key === 'LEFT' || key === 'PAGE_UP') {
-      stepIndex = Math.max(0, stepIndex - (key === 'LEFT' ? 1 : 10));
-      shouldUpdate = true;
-    } else if (key === 'RIGHT' || key === 'PAGE_DOWN') {
-      stepIndex = Math.min(
-        computedSteps.length - 1,
-        stepIndex + (key === 'RIGHT' ? 1 : 10)
-      );
-      shouldUpdate = true;
-    } else if (!done) {
-      const steps = (
-        key === ' ' ? 1 :
-        key === 'f' ? 10 :
-        0
-      );
-      for (let i = 0; i < steps; i++) {
-        const result = pathFindIterator.next();
-        if (result.done) {
-          done = true;
-        } else {
-          computedSteps.push(cloneAStarState(result.value));
-          stepIndex++;
-        }
-        shouldUpdate = true;
-      }
-    }
-
-    if (shouldUpdate) {
-      updateVisualization();
-    }
-  });
+  const controller = new AStarController(
+    pathFindIterator,
+    (terminal, screen) => new PuzzleView(terminal, screen, city)
+  );
+  controller.run();
 }
 
 type Position = readonly [row: number, column: number];
@@ -381,7 +319,7 @@ function* formatPathOnMap(
   }
 }
 
-class TerminalVisualization {
+class PuzzleView extends AStarView<string, Path> {
   static ARROWS = [
     ['←', '⇇', '⇦'],
     ['→', '⇉', '⇨'],
@@ -389,46 +327,34 @@ class TerminalVisualization {
     ['↓', '⇊', '⇩'],
   ];
 
-  private _state: AStarState<string, Path> | undefined;
-  private _previous: AStarState<string, Path> | undefined;
+  private readonly cellInnerX: number;
 
-  private message: readonly string[] = [];
+  private readonly signCellPlace = new Map<string, number>();
 
   constructor(
-    private readonly terminal: terminalKit.Terminal,
-    private readonly screen: terminalKit.ScreenBuffer,
+    terminal: terminalKit.Terminal,
+    screen: terminalKit.ScreenBuffer,
     private readonly city: PuzzleCity
-  ) {}
-
-  get state(): AStarState<string, Path> | undefined {
-    return this._state;
+  ) {
+    super(terminal, screen, {
+      cellCountX: city.maxColumn + 1,
+      cellCountY: city.maxRow + 1,
+      cellSizeX: 5,
+      cellSizeY: 2,
+    });
+    this.cellInnerX = this.options.cellSizeX - 1;
   }
 
-  setState(state: AStarState<string, Path>) {
-    this._state = state;
+  protected override drawAll(): void {
+    this.drawArea();
+    this.drawQueuedPaths();
+    this.drawQueue();
+    this.drawScrollbars();
+    this.drawMessages();
   }
 
-  get previousState(): AStarState<string, Path> | undefined {
-    return this._previous;
-  }
-
-  setPreviousState(previousState: AStarState<string, Path> | undefined) {
-    this._previous = previousState;
-  }
-
-  setMessage(message: readonly string[]) {
-    this.message = message;
-  }
-
-  draw() {
-    const {terminal, screen, city, state, previousState, message} = this;
-    screen.fill({attr: {}, char: ' '});
-
-    const paddingX = 1;
-    const paddingY = 1;
-    const cellSizeX = 4;
-    const cellMarginX = 1;
-    const cellSizeY = 2;
+  private drawArea() {
+    const {cellInnerX, terminal, city, state} = this;
 
     const goalPathPoints = new Set<`${number},${number}`>();
     if (state && state.foundGoal) {
@@ -443,140 +369,87 @@ class TerminalVisualization {
       for (let j = 0; j < line.length; j++) {
         row.push(line[j]);
         const colored = goalPathPoints.has(`${i},${j}`) ? terminal.yellow : terminal.gray;
-        this.putAnsi(
-          paddingX + j * (cellSizeX + cellMarginX),
-          paddingY + i * cellSizeY,
-          colored.str((line[j]).padStart(cellSizeX))
-        );
+        this.drawInCell(j, i, 0, 0, colored.str((line[j]).padStart(cellInnerX)));
       }
     }
-
-    if (state) {
-      const sortedQueue = Array.from(state.queue.items()).sort((a, b) => a[1] - b[1]);
-
-      let nextQueued: Path | undefined;
-      const nextQueuedPoints = new Set<`${number},${number}`>();
-      if (sortedQueue.length > 0) {
-        const [nodeKey] = sortedQueue[0];
-        nextQueued = state.shortest.get(nodeKey)!;
-        for (const [i, j] of collectPathPositions(nextQueued)) {
-          nextQueuedPoints.add(`${i},${j}`);
-        }
-      }
-
-      const minCostByCell = new Map<`${number},${number}`, number>();
-      for (const path of state.shortest.values()) {
-        const [i, j] = path.position;
-        const pointKey = `${i},${j}` as const;
-
-        const minCost = minCostByCell.get(pointKey) ?? Infinity;
-        if (minCost < path.cost) {
-          continue;
-        }
-        minCostByCell.set(pointKey, path.cost);
-
-        let colored = terminal;
-        if (nextQueued && i === nextQueued.position[0] && j === nextQueued.position[1]) {
-          colored = colored.bgGray;
-        } else if (nextQueuedPoints.has(pointKey)) {
-          colored = colored.red;
-        } else {
-          colored = colored.dim.red;
-        }
-
-        this.putAnsi(
-          paddingX + j * (cellSizeX + cellMarginX),
-          paddingY + i * cellSizeY + 1,
-          colored.str(String(path.cost).padStart(cellSizeX))
-        );
-      }
-
-      const newQueueItems = new Set<string>();
-      for (const [value] of state.queue.items()) {
-        newQueueItems.add(value);
-      }
-      if (previousState) {
-        for (const [value] of previousState.queue.items()) {
-          newQueueItems.delete(value);
-        }
-      }
-
-      const queueXPosition = paddingX + (city.maxColumn + 1) * (cellSizeX + cellMarginX) + 1;
-      let queueYPosition = paddingY;
-      const maxQueueYPosition = paddingY + city.maxColumn * cellSizeY;
-
-      const signCellPlace = new Map<string, number>();
-
-      let queueIndex = 0;
-      for (const [nodeKey, priority] of sortedQueue) {
-        const [i, j, seqColumn, seqRow] = nodeKey.split(',').map(v => Number(v));
-
-        const place = signCellPlace.get(`${i},${j}`) ?? 0;
-        signCellPlace.set(`${i},${j}`, place + 1);
-
-        const absValue = Math.min(Math.max(Math.abs(seqRow), Math.abs(seqColumn)), 3);
-        const sign = (
-          seqRow > 0 ? TerminalVisualization.ARROWS[3][absValue - 1] :
-          seqRow < 0 ? TerminalVisualization.ARROWS[2][absValue - 1] :
-          seqColumn > 0 ? TerminalVisualization.ARROWS[1][absValue - 1] :
-          seqColumn < 0 ? TerminalVisualization.ARROWS[0][absValue - 1] :
-          'o'
-        );
-
-        let colored = terminal;
-        if (newQueueItems.has(nodeKey)) {
-          colored = colored.green;
-        } else {
-          colored = (
-            queueIndex <= 4 ? colored.white :
-            queueIndex <= 13 ? colored.gray :
-            colored.gray.dim
-          );
-        }
-
-        if (queueIndex === 0) {
-          colored = colored.underline;
-        }
-
-        const signMarkup = colored.str(sign);
-        this.putAnsi(
-          paddingX + j * (cellSizeX + cellMarginX) + place % 2,
-          paddingY + i * cellSizeY + Math.floor(place / 2),
-          signMarkup
-        );
-
-        if (queueYPosition < maxQueueYPosition) {
-          this.putAnsi(
-            queueXPosition,
-            queueYPosition,
-            colored.str(`[${priority}: ${nodeKey}] `) as any + signMarkup + ' '
-          );
-        } else if (queueYPosition === maxQueueYPosition) {
-          this.putAnsi(
-            queueXPosition,
-            queueYPosition,
-            terminal.styleReset.str(`...`)
-          );
-        }
-        queueYPosition++;
-        queueIndex++;
-      }
-    }
-
-    for (let i = 0; i < message.length; i++) {
-      const line = message[i];
-      this.putAnsi(
-        paddingX,
-        paddingY + (city.maxColumn + 1) * cellSizeY + 1 + i,
-        terminal.styleReset.str(line)
-      );
-    }
-
-    screen.draw();
   }
 
-  private putAnsi(x: number, y: number, markup: string | terminalKit.Terminal): void {
-    this.screen.put({x, y, markup: 'ansi'} as any, markup as any as string);
+  private drawQueuedPaths() {
+    const {cellInnerX, terminal, state} = this;
+    if (!state) {
+      return;
+    }
+
+    let nextQueued: Path | undefined;
+    const nextQueuedPoints = new Set<`${number},${number}`>();
+    if (state.queue.size > 0) {
+      const [nodeKey] = state.queue.peek()!;
+      nextQueued = state.shortest.get(nodeKey)!;
+      for (const [i, j] of collectPathPositions(nextQueued)) {
+        nextQueuedPoints.add(`${i},${j}`);
+      }
+    }
+
+    const minCostByCell = new Map<`${number},${number}`, number>();
+    for (const path of state.shortest.values()) {
+      const [i, j] = path.position;
+      const pointKey = `${i},${j}` as const;
+
+      const minCost = minCostByCell.get(pointKey) ?? Infinity;
+      if (minCost < path.cost) {
+        continue;
+      }
+      minCostByCell.set(pointKey, path.cost);
+
+      let colored = terminal;
+      if (nextQueued && i === nextQueued.position[0] && j === nextQueued.position[1]) {
+        colored = colored.bgGray;
+      } else if (nextQueuedPoints.has(pointKey)) {
+        colored = colored.red;
+      } else {
+        colored = colored.dim.red;
+      }
+
+      this.drawInCell(j, i, 0, 1, colored.str(String(path.cost).padStart(cellInnerX)));
+    }
+  }
+
+  drawQueue() {
+    this.signCellPlace.clear();
+    super.drawQueue();
+  }
+
+  protected override drawQueueItem(
+    node: string,
+    priority: number,
+    colored: terminalKit.Terminal,
+    position: readonly [x: number, y: number] | undefined
+  ): void {
+    const {signCellPlace} = this;
+    const [i, j, seqColumn, seqRow] = node.split(',').map(v => Number(v));
+
+    const place = signCellPlace.get(`${i},${j}`) ?? 0;
+    signCellPlace.set(`${i},${j}`, place + 1);
+
+    const absValue = Math.min(Math.max(Math.abs(seqRow), Math.abs(seqColumn)), 3);
+    const sign = (
+      seqRow > 0 ? PuzzleView.ARROWS[3][absValue - 1] :
+      seqRow < 0 ? PuzzleView.ARROWS[2][absValue - 1] :
+      seqColumn > 0 ? PuzzleView.ARROWS[1][absValue - 1] :
+      seqColumn < 0 ? PuzzleView.ARROWS[0][absValue - 1] :
+      'o'
+    );
+
+    const signMarkup = colored.str(sign);
+    this.drawInCell(j, i, place % 2, Math.floor(place / 2), signMarkup);
+
+    if (position) {
+      this.putAnsi(
+        position[0],
+        position[1],
+        colored.str(`[${priority}: ${node}] `) as any + signMarkup + ' '
+      );
+    }
   }
 }
 
