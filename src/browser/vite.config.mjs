@@ -8,6 +8,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         day22: resolve(__dirname, 'day22.html'),
+        day24: resolve(__dirname, 'day24.html'),
       },
       output: {
         dir: resolve(__dirname, '../../dist/browser')
