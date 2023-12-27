@@ -57,7 +57,7 @@ class Hailstones {
 
     for (let i = 0; i < DATA.hailstones.length; i++) {
       const stone = DATA.hailstones[i];
-      const color = new THREE.Color(makeColorForIndex(i));
+      const color = new THREE.Color(i === 0 ? 'black' : makeColorForIndex(i));
 
       const pointOffset = i * 3;
       pointPositions[pointOffset] = scale(stone.origin.x);
@@ -155,7 +155,7 @@ varying vec3 vColor;
 void main() {
   vColor = color;
   vec4 mvPosition = modelViewMatrix * vec4(position + velocity * velocityScale * time, 1.0);
-  gl_PointSize = pointSize * (300.0 / -mvPosition.z);
+  gl_PointSize = (color == vec3(0, 0, 0) ? 2.0 : 1.0) * pointSize * (300.0 / -mvPosition.z);
   gl_Position = projectionMatrix * mvPosition;
 }
 `;
